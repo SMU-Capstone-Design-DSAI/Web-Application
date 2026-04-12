@@ -1,0 +1,16 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY}
+      HUGGINGFACE_IMAGE_MODEL: ${HUGGINGFACE_IMAGE_MODEL}
+      HUGGINGFACE_AUDIO_MODEL: ${HUGGINGFACE_AUDIO_MODEL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    # .env.local을 그대로 쓰고 싶으면 아래 주석을 풀고 파일명을 .env로 복제하세요.
+    # env_file:
+    #   - .env
+
