@@ -26,20 +26,66 @@ function normalizeHf(raw: unknown) {
   return { score01, reasons };
 }
 
-export async function POST(req: Request) {
-  const apiKey = process.env.HUGGINGFACE_API_KEY;
-  const model = process.env.HUGGINGFACE_AUDIO_MODEL;
-  if (!apiKey || !model) {
-    return NextResponse.json(
-      { error: "서버 환경변수(HUGGINGFACE_API_KEY/HUGGINGFACE_AUDIO_MODEL)가 설정되지 않았습니다." },
-      { status: 500 }
-    );
+function mapDetectorToAudioJson(j: Record<string, unknown>) {
+  const p = typeof j.ai_probability === "number" ? j.ai_probability : 0;
+  const manipulationScore = Math.round(clamp01(p) * 100);
+  const reasons: string[] = [];
+  if (Array.isArray(j.evidence)) {
+    for (const e of j.evidence) {
+      if (typeof e === "string") reasons.push(e);
+    }
   }
+  if (Array.isArray(j.warnings)) {
+    for (const w of j.warnings) {
+      if (typeof w === "string") reasons.push(`주의: ${w}`);
+    }
+  }
+  return { manipulationScore, reasons };
+}
 
+export async function POST(req: Request) {
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "file이 필요합니다." }, { status: 400 });
+  }
+
+  const detectorBase = process.env.AI_DETECTOR_BASE_URL?.replace(/\/$/, "");
+  if (detectorBase) {
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    const detRes = await fetch(`${detectorBase}/analyze`, { method: "POST", body: fd });
+    const rawText = await detRes.text();
+    if (!detRes.ok) {
+      return NextResponse.json(
+        {
+          error: `로컬 탐지 API가 이 파일을 처리하지 못했습니다(오디오 전용·미지원 확장자일 수 있음). ${rawText || detRes.statusText}`
+        },
+        { status: detRes.status === 400 ? 400 : 502 }
+      );
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(rawText) as unknown;
+    } catch {
+      return NextResponse.json({ error: "탐지 API 응답 파싱 실패" }, { status: 502 });
+    }
+    if (!raw || typeof raw !== "object") {
+      return NextResponse.json({ error: "탐지 API 응답 형식 오류" }, { status: 502 });
+    }
+    return NextResponse.json(mapDetectorToAudioJson(raw as Record<string, unknown>));
+  }
+
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  const model = process.env.HUGGINGFACE_AUDIO_MODEL;
+  if (!apiKey || !model) {
+    return NextResponse.json(
+      {
+        error:
+          "음성 분석: AI_DETECTOR_BASE_URL(이미지/영상·탐지기가 지원하는 형식) 또는 HUGGINGFACE_API_KEY/HUGGINGFACE_AUDIO_MODEL이 필요합니다."
+      },
+      { status: 500 }
+    );
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
@@ -54,10 +100,7 @@ export async function POST(req: Request) {
 
   const rawText = await hfRes.text();
   if (!hfRes.ok) {
-    return NextResponse.json(
-      { error: `HuggingFace 오류: ${rawText}` },
-      { status: 502 }
-    );
+    return NextResponse.json({ error: `HuggingFace 오류: ${rawText}` }, { status: 502 });
   }
 
   let raw: unknown;
@@ -73,4 +116,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ manipulationScore, reasons });
 }
-

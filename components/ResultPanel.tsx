@@ -1,14 +1,13 @@
 "use client";
 
-import type { AnalyzeAudioResponse, AnalyzeMediaResponse, SummarizeResponse } from "./types";
+import type { AnalyzeAudioResponse, AnalyzeMediaResponse } from "./types";
 
 type Props = {
   mediaResult?: AnalyzeMediaResponse | null;
   audioResult?: AnalyzeAudioResponse | null;
-  summary?: SummarizeResponse | null;
 };
 
-export default function ResultPanel({ mediaResult, audioResult, summary }: Props) {
+export default function ResultPanel({ mediaResult, audioResult }: Props) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-4">
       <div className="text-sm font-semibold text-white/90">분석 결과</div>
@@ -50,26 +49,6 @@ export default function ResultPanel({ mediaResult, audioResult, summary }: Props
           )}
         </div>
       </div>
-
-      <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
-        <div className="text-xs font-semibold text-white/70">요약</div>
-        {summary ? (
-          <div className="mt-2 text-sm text-white/90">
-            <div>위험도: {summary.riskLevel}</div>
-            <div>점수: {summary.riskScore}/100</div>
-            {summary.warnings?.length ? (
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-white/80">
-                {summary.warnings.map((w, idx) => (
-                  <li key={idx}>{w}</li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : (
-          <div className="mt-2 text-sm text-white/50">아직 종합되지 않았습니다.</div>
-        )}
-      </div>
     </div>
   );
 }
-

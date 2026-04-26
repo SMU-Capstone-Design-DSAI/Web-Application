@@ -3,14 +3,8 @@
 import { useMemo, useRef, useState } from "react";
 import ChatBot from "@/components/ChatBot";
 import DropzoneUploader from "@/components/DropzoneUploader";
-import FeedbackCard from "@/components/FeedbackCard";
 import ProgressBar from "@/components/ProgressBar";
-import type {
-  AnalyzeAudioResponse,
-  AnalyzeMediaResponse,
-  SummarizeRequest,
-  SummarizeResponse
-} from "@/components/types";
+import type { AnalyzeAudioResponse, AnalyzeMediaResponse } from "@/components/types";
 
 type TabKey = "media" | "audio" | "chat";
 
@@ -29,7 +23,6 @@ export default function Page() {
 
   const [mediaResult, setMediaResult] = useState<AnalyzeMediaResponse | null>(null);
   const [audioResult, setAudioResult] = useState<AnalyzeAudioResponse | null>(null);
-  const [summary, setSummary] = useState<SummarizeResponse | null>(null);
 
   const [loadingMedia, setLoadingMedia] = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
@@ -39,22 +32,9 @@ export default function Page() {
     return t.startsWith("video/");
   }, [mediaFile]);
 
-  function mergeSummarizeBody(
-    next: Partial<SummarizeRequest>
-  ): SummarizeRequest {
-    return {
-      mediaScore: next.mediaScore,
-      audioScore: next.audioScore,
-      mediaReasons: next.mediaReasons ?? [],
-      audioReasons: next.audioReasons ?? [],
-      contentSummary: next.contentSummary ?? ""
-    };
-  }
-
   async function analyzeMedia() {
     if (!mediaFile || loadingMedia) return;
     setLoadingMedia(true);
-    setSummary(null);
 
     try {
       const fd = new FormData();
@@ -64,36 +44,19 @@ export default function Page() {
       if (!res.ok) throw new Error(data.error || "이미지/영상 분석 실패");
       setMediaResult(data);
 
-      // 영상이고 음성이 있다고 판단되면 같은 파일로 음성 분석도 자동 호출
-      let nextAudio: AnalyzeAudioResponse | null = null;
       if (mediaIsVideo && data.hasAudio) {
         const fd2 = new FormData();
         fd2.append("file", mediaFile);
         const resA = await fetch("/api/analyze-audio", { method: "POST", body: fd2 });
         const a = (await resA.json()) as AnalyzeAudioResponse & { error?: string };
         if (resA.ok) {
-          nextAudio = a;
           setAudioResult(a);
         }
+      } else {
+        setAudioResult(null);
       }
-
-      const res2 = await fetch("/api/summarize", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          mergeSummarizeBody({
-            mediaScore: data.manipulationScore,
-            audioScore: nextAudio?.manipulationScore,
-            mediaReasons: data.reasons,
-            audioReasons: nextAudio?.reasons
-          })
-        )
-      });
-      const data2 = (await res2.json()) as SummarizeResponse & { error?: string };
-      if (!res2.ok) throw new Error(data2.error || "종합 산출 실패");
-      setSummary(data2);
     } catch {
-      setSummary(null);
+      setMediaResult(null);
     } finally {
       setLoadingMedia(false);
     }
@@ -102,7 +65,6 @@ export default function Page() {
   async function analyzeAudio() {
     if (!audioFile || loadingAudio) return;
     setLoadingAudio(true);
-    setSummary(null);
 
     try {
       const fd = new FormData();
@@ -111,22 +73,8 @@ export default function Page() {
       const data = (await res.json()) as AnalyzeAudioResponse & { error?: string };
       if (!res.ok) throw new Error(data.error || "음성 분석 실패");
       setAudioResult(data);
-
-      const res2 = await fetch("/api/summarize", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          mergeSummarizeBody({
-            audioScore: data.manipulationScore,
-            audioReasons: data.reasons
-          })
-        )
-      });
-      const data2 = (await res2.json()) as SummarizeResponse & { error?: string };
-      if (!res2.ok) throw new Error(data2.error || "종합 산출 실패");
-      setSummary(data2);
     } catch {
-      setSummary(null);
+      setAudioResult(null);
     } finally {
       setLoadingAudio(false);
     }
@@ -187,7 +135,6 @@ export default function Page() {
                 onFileSelected={(f) => {
                   setMediaFile(f);
                   setMediaResult(null);
-                  setSummary(null);
                 }}
               />
 
@@ -203,7 +150,6 @@ export default function Page() {
                   onClick={() => {
                     setMediaFile(null);
                     setMediaResult(null);
-                    setSummary(null);
                   }}
                   className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white/85 hover:bg-white/10"
                 >
@@ -214,17 +160,17 @@ export default function Page() {
               <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/60">
                 {mediaIsVideo ? (
                   <>
-                    <div className="font-semibold text-white/80">영상에서 음성 추출</div>
+                    <div className="font-semibold text-white/80">영상 + 음성</div>
                     <div className="mt-1">
-                      영상으로 감지되면 hasAudio=true일 때 음성 분석을 자동으로 추가 호출합니다.
+                      영상이면 음성 탭과 동일한 점수 체계로 음성 경로를 추가로 분석해 두었을 수 있습니다(탐지기
+                      제약에 따라).
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="font-semibold text-white/80">안내</div>
+                    <div className="font-semibold text-white/80">이미지 히트맵</div>
                     <div className="mt-1">
-                      외부 API 호출을 위해 서버에 환경변수 설정이 필요합니다. (Docker 실행 시 compose에서
-                      주입)
+                      로컬 AI 탐지 API 사용 시, 모델이 판정에 민감하게 반응한 영역을 겹쳐 보여 드립니다.
                     </div>
                   </>
                 )}
@@ -237,6 +183,45 @@ export default function Page() {
                 label="AI 조작 가능성 %"
                 tone={toneFromPercent(mediaResult ? mediaResult.manipulationScore : 0)}
               />
+
+              {mediaIsVideo && mediaResult ? (
+                <div className="rounded-xl border border-white/10 border-dashed border-amber-400/30 bg-amber-500/5 p-3 text-sm text-amber-100/80">
+                  영상은 프레임 단위 공간 히트맵이 아직 지원되지 않습니다. 아래 &quot;판단 근거&quot; 텍스트로 요약을
+                  확인하세요.
+                </div>
+              ) : null}
+
+              {!mediaIsVideo && mediaResult ? (
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-sm font-semibold text-white/90">공간 히트맵 (어느 영역을 판정에 썼는지)</div>
+                  {mediaResult.saliencyPngDataUrl ? (
+                    <>
+                      <p className="mt-1 text-xs text-white/60">
+                        {mediaResult.saliencyCaption ||
+                          "빨강·노랑에 가깝을수록 모델이 판정(인공 vs 실제)에 더 민감하게 반응한 곳입니다."}
+                      </p>
+                      <div className="mt-3 overflow-hidden rounded-lg border border-white/10 bg-black/30">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={mediaResult.saliencyPngDataUrl}
+                          alt="모델 민감도 히트맵이 겹쳐진 이미지"
+                          className="h-auto w-full object-contain"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-2 space-y-2 text-sm text-white/80">
+                      <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-amber-100/90">
+                        {mediaResult.saliencyNotice
+                          ? mediaResult.saliencyNotice
+                          : mediaResult.saliencyCaption
+                            ? mediaResult.saliencyCaption
+                            : "히트맵 이미지가 오지 않았습니다. 로컬 AI 탐지 API(detector)가 연결돼 있고, 모델 히트맵 생성이 성공한 경우에만 색이 겹친 이미지가 표시됩니다."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : null}
 
               <div className="rounded-xl border border-white/10 bg-white/5 p-4">
                 <div className="text-sm font-semibold text-white/90">판단 근거</div>
@@ -252,8 +237,6 @@ export default function Page() {
                   </div>
                 )}
               </div>
-
-              <FeedbackCard summary={summary} />
             </div>
           </div>
         ) : null}
@@ -269,7 +252,6 @@ export default function Page() {
                 onFileSelected={(f) => {
                   setAudioFile(f);
                   setAudioResult(null);
-                  setSummary(null);
                 }}
               />
 
@@ -285,7 +267,6 @@ export default function Page() {
                   onClick={() => {
                     setAudioFile(null);
                     setAudioResult(null);
-                    setSummary(null);
                   }}
                   className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white/85 hover:bg-white/10"
                 >
@@ -294,7 +275,7 @@ export default function Page() {
               </div>
 
               <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/60">
-                외부 API 호출을 위해 서버에 환경변수 설정이 필요합니다. (Docker 실행 시 compose에서 주입)
+                외부 API가 필요한 경우 서버(또는 Docker)에 환경 변수를 넣어 주세요.
               </div>
             </div>
 
@@ -319,8 +300,6 @@ export default function Page() {
                   </div>
                 )}
               </div>
-
-              <FeedbackCard summary={summary} />
             </div>
           </div>
         ) : null}
@@ -353,4 +332,3 @@ export default function Page() {
     </main>
   );
 }
-

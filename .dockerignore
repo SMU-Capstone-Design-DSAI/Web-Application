@@ -1,9 +1,15 @@
 node_modules
 .next
+out
+.turbo
+.vercel
+coverage
 npm-debug.log
 yarn-error.log
 pnpm-debug.log
 .git
 .env
 .env.local
+.env.*.local
+*.tsbuildinfo
 
